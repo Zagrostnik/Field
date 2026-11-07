@@ -1,3 +1,4 @@
+
 using System.Collections;
 using UnityEngine;
 
@@ -7,97 +8,196 @@ namespace FieldMission
     {
         [Header("References")]
         [SerializeField] private Camera playerCamera;
-        [SerializeField] private Transform weaponVisual;
-        [SerializeField] private Animator weaponAnimator;
+        [SerializeField] private Transform weaponHolder;
         [SerializeField] private AudioSource weaponAudio;
-        [SerializeField] private AudioClip shotClip, reloadClip, emptyClip;
-        [SerializeField] private ParticleSystem muzzleFlash;
-        [Header("Weapon")]
+        [SerializeField] private AudioClip shotClip;
+        [SerializeField] private AudioClip reloadClip;
+        [SerializeField] private AudioClip emptyClip;
+
+        [Header("Weapon Settings")]
         [SerializeField] private int magazineSize = 30;
         [SerializeField] private int reserveAmmo = 120;
         [SerializeField] private float damage = 35f;
-        [SerializeField] private float range = 180f;
-        [SerializeField] private float roundsPerMinute = 650f;
-        [SerializeField] private float reloadDuration = 2.3f;
-        [SerializeField] private LayerMask hitMask = ~0;
+        [SerializeField] private float range = 200f;
+        [SerializeField] private float fireRate = 650f;
+
         [Header("Recoil")]
-        [SerializeField] private float recoilKick = 2.2f;
-        [SerializeField] private float recoilReturn = 8f;
-        [SerializeField] private float aimSensitivityMultiplier = 0.65f;
+        [SerializeField] private float recoilAmount = 2f;
+        [SerializeField] private float recoilRecovery = 8f;
 
-        private int ammo;
+        [Header("Reload - Arma Style")]
+        [SerializeField] private float lowerDuration = 0.35f;
+        [SerializeField] private float reloadPause = 1.2f;
+        [SerializeField] private float raiseDuration = 0.4f;
+        [SerializeField] private float loweredPosition = -0.45f;
+
+        [Header("Shooting")]
+        [SerializeField] private LayerMask hitMask = ~0;
+
+        private int currentAmmo;
         private float nextShotTime;
-        private bool reloading;
-        private Vector3 initialWeaponPosition;
-        private Quaternion initialWeaponRotation;
-        private float recoil;
-        private IWeaponFireStrategy fireStrategy;
+        private float currentRecoil;
+        private bool isReloading;
 
-        public int Ammo => ammo;
-        public int ReserveAmmo => reserveAmmo;
+        private Vector3 initialPosition;
+        private Quaternion initialRotation;
 
-        private void Awake()
+        private void Start()
         {
-            ammo = magazineSize;
-            fireStrategy = new HitscanFireStrategy();
-            if (weaponVisual != null) { initialWeaponPosition = weaponVisual.localPosition; initialWeaponRotation = weaponVisual.localRotation; }
-            PublishAmmo();
+            currentAmmo = magazineSize;
+
+            initialPosition = weaponHolder.localPosition;
+            initialRotation = weaponHolder.localRotation;
         }
 
         private void Update()
         {
-            if (GameManager.Instance == null || GameManager.Instance.State != MissionState.Playing || reloading) return;
+            if (GameManager.Instance == null ||
+                GameManager.Instance.State != MissionState.Playing)
+                return;
 
-            if (Input.GetKeyDown(KeyCode.R)) { StartCoroutine(Reload()); return; }
-            if (Input.GetMouseButton(0)) TryFire();
-            if (Input.GetMouseButtonDown(1) && weaponAnimator != null) weaponAnimator.SetBool("Aiming", true);
-            if (Input.GetMouseButtonUp(1) && weaponAnimator != null) weaponAnimator.SetBool("Aiming", false);
+            if (Input.GetKeyDown(KeyCode.R))
+                StartCoroutine(Reload());
 
-            recoil = Mathf.Lerp(recoil, 0f, Time.deltaTime * recoilReturn);
-            if (weaponVisual != null)
-            {
-                weaponVisual.localPosition = Vector3.Lerp(weaponVisual.localPosition, initialWeaponPosition + Vector3.back * recoil * 0.012f, Time.deltaTime * 12f);
-                weaponVisual.localRotation = Quaternion.Slerp(weaponVisual.localRotation, initialWeaponRotation * Quaternion.Euler(-recoil * 1.7f, 0, 0), Time.deltaTime * 12f);
-            }
+            if (isReloading)
+                return;
+
+            if (Input.GetMouseButton(0))
+                Shoot();
+
+            currentRecoil = Mathf.Lerp(
+                currentRecoil,
+                0f,
+                Time.deltaTime * recoilRecovery
+            );
+
+            weaponHolder.localRotation = Quaternion.Slerp(
+                weaponHolder.localRotation,
+                initialRotation * Quaternion.Euler(-currentRecoil, 0, 0),
+                Time.deltaTime * 10f
+            );
         }
 
-        private void TryFire()
+        private void Shoot()
         {
-            if (Time.time < nextShotTime) return;
-            if (ammo <= 0)
+            if (Time.time < nextShotTime)
+                return;
+
+            if (currentAmmo <= 0)
             {
                 nextShotTime = Time.time + 0.25f;
-                if (weaponAudio != null && emptyClip != null) weaponAudio.PlayOneShot(emptyClip);
+
+                if (weaponAudio && emptyClip)
+                    weaponAudio.PlayOneShot(emptyClip);
+
                 return;
             }
 
-            nextShotTime = Time.time + 60f / roundsPerMinute;
-            ammo--;
-            fireStrategy.Fire(playerCamera.transform, damage, range, hitMask);
-            recoil = Mathf.Min(recoil + recoilKick, 7f);
-            if (muzzleFlash != null) muzzleFlash.Play();
-            if (weaponAudio != null && shotClip != null) weaponAudio.PlayOneShot(shotClip);
-            if (weaponAnimator != null) weaponAnimator.SetTrigger("Fire");
+            nextShotTime = Time.time + 60f / fireRate;
+            currentAmmo--;
+
+            if (Physics.Raycast(
+                playerCamera.transform.position,
+                playerCamera.transform.forward,
+                out RaycastHit hit,
+                range,
+                hitMask))
+            {
+                IDamageable target =
+                    hit.collider.GetComponentInParent<IDamageable>();
+
+                if (target != null)
+                    target.TakeDamage(damage);
+            }
+
+            currentRecoil = Mathf.Min(
+                currentRecoil + recoilAmount,
+                12f
+            );
+
+            if (weaponAudio && shotClip)
+                weaponAudio.PlayOneShot(shotClip);
+
             GameEvents.RaiseShotFired();
-            PublishAmmo();
+            GameEvents.RaiseAmmoChanged(currentAmmo, reserveAmmo);
         }
 
         private IEnumerator Reload()
         {
-            if (ammo == magazineSize || reserveAmmo <= 0) yield break;
-            reloading = true;
+            if (isReloading ||
+                currentAmmo == magazineSize ||
+                reserveAmmo <= 0)
+                yield break;
+
+            isReloading = true;
+
             GameEvents.RaiseReloadStarted();
-            if (weaponAnimator != null) weaponAnimator.SetTrigger("Reload");
-            if (weaponAudio != null && reloadClip != null) weaponAudio.PlayOneShot(reloadClip);
-            yield return new WaitForSeconds(reloadDuration);
-            int needed = magazineSize - ammo;
+
+            if (weaponAudio && reloadClip)
+                weaponAudio.PlayOneShot(reloadClip);
+
+            Vector3 loweredPositionVector =
+                initialPosition + Vector3.down * Mathf.Abs(loweredPosition);
+
+            // Опускаем автомат
+            yield return MoveWeapon(
+                initialPosition,
+                loweredPositionVector,
+                initialRotation,
+                Quaternion.Euler(15f, 0f, 0f) * initialRotation,
+                lowerDuration
+            );
+
+            // Имитация смены магазина
+            yield return new WaitForSeconds(reloadPause);
+
+            // Возвращаем автомат
+            yield return MoveWeapon(
+                loweredPositionVector,
+                initialPosition,
+                Quaternion.Euler(15f, 0f, 0f) * initialRotation,
+                initialRotation,
+                raiseDuration
+            );
+
+            int needed = magazineSize - currentAmmo;
             int loaded = Mathf.Min(needed, reserveAmmo);
-            ammo += loaded;
+
+            currentAmmo += loaded;
             reserveAmmo -= loaded;
-            reloading = false;
-            PublishAmmo();
+
+            GameEvents.RaiseAmmoChanged(currentAmmo, reserveAmmo);
+
+            isReloading = false;
         }
 
-        private void PublishAmmo() => GameEvents.RaiseAmmoChanged(ammo, reserveAmmo);
+        private IEnumerator MoveWeapon(
+            Vector3 fromPosition,
+            Vector3 toPosition,
+            Quaternion fromRotation,
+            Quaternion toRotation,
+            float duration)
+        {
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+
+                float t = Mathf.Clamp01(elapsed / duration);
+                t = Mathf.SmoothStep(0f, 1f, t);
+
+                weaponHolder.localPosition =
+                    Vector3.Lerp(fromPosition, toPosition, t);
+
+                weaponHolder.localRotation =
+                    Quaternion.Slerp(fromRotation, toRotation, t);
+
+                yield return null;
+            }
+
+            weaponHolder.localPosition = toPosition;
+            weaponHolder.localRotation = toRotation;
+        }
     }
 }
