@@ -14,6 +14,11 @@ namespace FieldMission
         [SerializeField] private AudioClip reloadClip;
         [SerializeField] private AudioClip emptyClip;
 
+        [Header("Recoil References")]
+        [SerializeField] private FirstPersonLook firstPersonLook;
+        [SerializeField] private WeaponRecoil weaponRecoil;
+        [SerializeField] private AimController aimController;
+
         [Header("Weapon Settings")]
         [SerializeField] private int magazineSize = 30;
         [SerializeField] private int reserveAmmo = 120;
@@ -21,11 +26,13 @@ namespace FieldMission
         [SerializeField] private float range = 200f;
         [SerializeField] private float fireRate = 650f;
 
-        [Header("Recoil")]
-        [SerializeField] private float recoilAmount = 2f;
-        [SerializeField] private float recoilRecovery = 8f;
+        [Header("Recoil Settings")]
+        [SerializeField] private float cameraRecoil = 1.1f;
+        [SerializeField] private float cameraHorizontalRecoil = 0.25f;
+        [SerializeField] private float recoilVariation = 0.25f;
+        [SerializeField] private float aimingRecoilMultiplier = 0.7f;
 
-        [Header("Reload - Arma Style")]
+        [Header("Reload")]
         [SerializeField] private float lowerDuration = 0.35f;
         [SerializeField] private float reloadPause = 1.2f;
         [SerializeField] private float raiseDuration = 0.4f;
@@ -33,10 +40,10 @@ namespace FieldMission
 
         [Header("Shooting")]
         [SerializeField] private LayerMask hitMask = ~0;
+        [SerializeField] private MuzzleFlash muzzleFlash;
 
         private int currentAmmo;
         private float nextShotTime;
-        private float currentRecoil;
         private bool isReloading;
 
         private Vector3 initialPosition;
@@ -48,6 +55,8 @@ namespace FieldMission
 
             initialPosition = weaponHolder.localPosition;
             initialRotation = weaponHolder.localRotation;
+
+            GameEvents.RaiseAmmoChanged(currentAmmo, reserveAmmo);
         }
 
         private void Update()
@@ -64,18 +73,6 @@ namespace FieldMission
 
             if (Input.GetMouseButton(0))
                 Shoot();
-
-            currentRecoil = Mathf.Lerp(
-                currentRecoil,
-                0f,
-                Time.deltaTime * recoilRecovery
-            );
-
-            weaponHolder.localRotation = Quaternion.Slerp(
-                weaponHolder.localRotation,
-                initialRotation * Quaternion.Euler(-currentRecoil, 0, 0),
-                Time.deltaTime * 10f
-            );
         }
 
         private void Shoot()
@@ -95,7 +92,8 @@ namespace FieldMission
 
             nextShotTime = Time.time + 60f / fireRate;
             currentAmmo--;
-
+            if (muzzleFlash != null)
+                muzzleFlash.Play();
             if (Physics.Raycast(
                 playerCamera.transform.position,
                 playerCamera.transform.forward,
@@ -110,16 +108,113 @@ namespace FieldMission
                     target.TakeDamage(damage);
             }
 
-            currentRecoil = Mathf.Min(
-                currentRecoil + recoilAmount,
-                12f
-            );
+            ApplyRecoil();
 
             if (weaponAudio && shotClip)
                 weaponAudio.PlayOneShot(shotClip);
 
             GameEvents.RaiseShotFired();
             GameEvents.RaiseAmmoChanged(currentAmmo, reserveAmmo);
+        }
+
+
+        //private void Shoot()
+        //{
+        //    if (Time.time < nextShotTime)
+        //        return;
+
+        //    if (currentAmmo <= 0)
+        //    {
+        //        nextShotTime = Time.time + 0.25f;
+
+        //        if (weaponAudio && emptyClip)
+        //            weaponAudio.PlayOneShot(emptyClip);
+
+        //        return;
+        //    }
+
+        //    nextShotTime = Time.time + 60f / fireRate;
+        //    currentAmmo--;
+
+        //    Vector3 origin = playerCamera.transform.position;
+        //    Vector3 direction = playerCamera.transform.forward;
+
+        //    Vector3 endPoint = origin + direction * range;
+
+        //    if (Physics.Raycast(
+        //        origin,
+        //        direction,
+        //        out RaycastHit hit,
+        //        range,
+        //        hitMask))
+        //    {
+        //        endPoint = hit.point;
+
+        //        Debug.Log(
+        //            "Попадание: " + hit.collider.name +
+        //            " | Точка: " + hit.point
+        //        );
+
+        //        IDamageable target =
+        //            hit.collider.GetComponentInParent<IDamageable>();
+
+        //        if (target != null)
+        //            target.TakeDamage(damage);
+        //    }
+        //    else
+        //    {
+        //        Debug.Log("Выстрел: попаданий нет");
+        //    }
+
+        //    Debug.DrawLine(origin, endPoint, Color.red, 2f);
+
+
+        //    if (muzzleFlash != null)
+        //        muzzleFlash.Play();
+
+        //    if (weaponAudio && shotClip)
+        //        weaponAudio.PlayOneShot(shotClip);
+
+        //    GameEvents.RaiseShotFired();
+        //    GameEvents.RaiseAmmoChanged(currentAmmo, reserveAmmo);
+        //}
+
+
+
+        private void ApplyRecoil()
+        {
+            bool aiming = aimController != null &&
+                          aimController.IsAiming;
+
+            float multiplier = aiming
+                ? aimingRecoilMultiplier
+                : 1f;
+
+            float horizontal = Random.Range(
+                -cameraHorizontalRecoil,
+                cameraHorizontalRecoil
+            );
+
+            float variation = Random.Range(
+                1f - recoilVariation,
+                1f + recoilVariation
+            );
+
+            if (firstPersonLook != null)
+            {
+                firstPersonLook.AddRecoil(
+                    cameraRecoil * multiplier * variation,
+                    horizontal * multiplier
+                );
+            }
+
+            if (weaponRecoil != null)
+            {
+                weaponRecoil.AddRecoil(
+                    multiplier * variation,
+                    horizontal
+                );
+            }
         }
 
         private IEnumerator Reload()
@@ -137,9 +232,9 @@ namespace FieldMission
                 weaponAudio.PlayOneShot(reloadClip);
 
             Vector3 loweredPositionVector =
-                initialPosition + Vector3.down * Mathf.Abs(loweredPosition);
+                initialPosition +
+                Vector3.down * Mathf.Abs(loweredPosition);
 
-            // Опускаем автомат
             yield return MoveWeapon(
                 initialPosition,
                 loweredPositionVector,
@@ -148,10 +243,8 @@ namespace FieldMission
                 lowerDuration
             );
 
-            // Имитация смены магазина
             yield return new WaitForSeconds(reloadPause);
 
-            // Возвращаем автомат
             yield return MoveWeapon(
                 loweredPositionVector,
                 initialPosition,
