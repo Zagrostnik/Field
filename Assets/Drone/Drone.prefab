@@ -28,7 +28,7 @@ Transform:
   m_GameObject: {fileID: 226596639598330118}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.06013, y: 0, z: 0.00953}
+  m_LocalPosition: {x: 220.3592, y: -0.00002, z: 378.4905}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -54,7 +54,7 @@ MonoBehaviour:
   targetHeight: 0.8
   impactDamage: 100
   droneAudio: {fileID: 0}
-  explosionPrefab: {fileID: 1620140131458704099, guid: 57e5b83dfee152a47aedf7d83c83e9f5, type: 3}
+  explosionPrefab: {fileID: 9111320563476075686, guid: c6fb71e58ec36784687d958bc39de3f2, type: 3}
 --- !u!135 &6131800499410026681
 SphereCollider:
   m_ObjectHideFlags: 0
